@@ -1,0 +1,220 @@
+<script type="text/javascript">
+        var gk_isXlsx = false;
+        var gk_xlsxFileLookup = {};
+        var gk_fileData = {};
+        function filledCell(cell) {
+          return cell !== '' && cell != null;
+        }
+        function loadFileData(filename) {
+        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+            try {
+                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+                var firstSheetName = workbook.SheetNames[0];
+                var worksheet = workbook.Sheets[firstSheetName];
+
+                // Convert sheet to JSON to filter blank rows
+                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+                // Filter out blank rows (rows where all cells are empty, null, or undefined)
+                var filteredData = jsonData.filter(row => row.some(filledCell));
+
+                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
+                var headerRowIndex = filteredData.findIndex((row, index) =>
+                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
+                );
+                // Fallback
+                if (headerRowIndex === -1 || headerRowIndex > 25) {
+                  headerRowIndex = 0;
+                }
+
+                // Convert filtered JSON back to CSV
+                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
+                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+                return csv;
+            } catch (e) {
+                console.error(e);
+                return "";
+            }
+        }
+        return gk_fileData[filename] || "";
+        }
+        </script><!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Drink Water Reminder</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body {
+      font-family: 'Inter', sans-serif;
+    }
+    .progress-bar {
+      transition: width 0.3s ease-in-out;
+    }
+  </style>
+</head>
+<body class="bg-gray-100 min-h-screen flex items-center justify-center">
+  <div class="bg-white p-6 rounded-lg shadow-lg w-full max-w-md">
+    <h1 class="text-2xl font-bold text-center text-blue-600 mb-4">Drink Water Reminder</h1>
+    
+    <!-- Goal Setting -->
+    <div class="mb-4">
+      <label for="goal" class="block text-sm font-medium text-gray-700">Daily Water Goal (ml):</label>
+      <div class="flex items-center space-x-2">
+        <input
+          type="number"
+          id="goal"
+          class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring focus:ring-blue-500 focus:ring-opacity-50"
+          placeholder="Enter goal (e.g., 2000)"
+          min="500"
+          max="5000"
+        />
+        <button
+          onclick="setGoal()"
+          class="mt-1 bg-blue-500 text-white px-4 py-2 rounded-md hover:bg-blue-600"
+        >
+          Set Goal
+        </button>
+      </div>
+    </div>
+
+    <!-- Current Progress -->
+    <div class="mb-4">
+      <p class="text-sm font-medium text-gray-700">Current Intake: <span id="currentIntake">0</span> ml</p>
+      <p class="text-sm font-medium text-gray-700">Goal: <span id="goalDisplay">Not set</span></p>
+      <div class="w-full bg-gray-200 rounded-full h-4 mt-2">
+        <div id="progressBar" class="bg-blue-500 h-4 rounded-full progress-bar" style="width: 0%"></div>
+      </div>
+    </div>
+
+    <!-- Log Water Intake -->
+    <div class="mb-4">
+      <label for="intake" class="block text-sm font-medium text-gray-700">Log Water (ml):</label>
+      <div class="flex items-center space-x-2">
+        <input
+          type="number"
+          id="intake"
+          class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring focus:ring-blue-500 focus:ring-opacity-50"
+          placeholder="Enter amount (e.g., 250)"
+          min="50"
+          max="1000"
+        />
+        <button
+          onclick="logIntake()"
+          class="mt-1 bg-green-500 text-white px-4 py-2 rounded-md hover:bg-green-600"
+        >
+          Log
+        </button>
+      </div>
+    </div>
+
+    <!-- Reset Button -->
+    <button
+      onclick="resetProgress()"
+      class="w-full bg-red-500 text-white px-4 py-2 rounded-md hover:bg-red-600"
+    >
+      Reset Progress
+    </button>
+  </div>
+
+  <script>
+    let goal = 0;
+    let currentIntake = 0;
+
+    // Load data from local storage on page load
+    window.onload = function () {
+      if (localStorage.getItem('waterGoal')) {
+        goal = parseInt(localStorage.getItem('waterGoal'));
+        document.getElementById('goalDisplay').textContent = `${goal} ml`;
+      }
+      if (localStorage.getItem('currentIntake')) {
+        currentIntake = parseInt(localStorage.getItem('currentIntake'));
+        document.getElementById('currentIntake').textContent = currentIntake;
+        updateProgressBar();
+      }
+      requestNotificationPermission();
+      startReminder();
+    };
+
+    // Request notification permission
+    function requestNotificationPermission() {
+      if (Notification.permission !== 'granted' && Notification.permission !== 'denied') {
+        Notification.requestPermission().then(permission => {
+          if (permission === 'granted') {
+            console.log('Notification permission granted');
+          }
+        });
+      }
+    }
+
+    // Set daily water goal
+    function setGoal() {
+      const goalInput = document.getElementById('goal').value;
+      if (goalInput && goalInput >= 500 && goalInput <= 5000) {
+        goal = parseInt(goalInput);
+        localStorage.setItem('waterGoal', goal);
+        document.getElementById('goalDisplay').textContent = `${goal} ml`;
+        updateProgressBar();
+        alert('Goal set successfully!');
+      } else {
+        alert('Please enter a valid goal between 500 and 5000 ml.');
+      }
+    }
+
+    // Log water intake
+    function logIntake() {
+      const intakeInput = document.getElementById('intake').value;
+      if (intakeInput && intakeInput >= 50 && intakeInput <= 1000) {
+        currentIntake += parseInt(intakeInput);
+        localStorage.setItem('currentIntake', currentIntake);
+        document.getElementById('currentIntake').textContent = currentIntake;
+        updateProgressBar();
+        document.getElementById('intake').value = '';
+        checkGoalCompletion();
+      } else {
+        alert('Please enter a valid amount between 50 and 1000 ml.');
+      }
+    }
+
+    // Update progress bar
+    function updateProgressBar() {
+      if (goal > 0) {
+        const percentage = Math.min((currentIntake / goal) * 100, 100);
+        document.getElementById('progressBar').style.width = `${percentage}%`;
+      }
+    }
+
+    // Check if goal is completed
+    function checkGoalCompletion() {
+      if (goal > 0 && currentIntake >= goal) {
+        showNotification('Congratulations!', 'You have reached your daily water intake goal!');
+      }
+    }
+
+    // Reset progress
+    function resetProgress() {
+      currentIntake = 0;
+      localStorage.setItem('currentIntake', currentIntake);
+      document.getElementById('currentIntake').textContent = currentIntake;
+      document.getElementById('progressBar').style.width = '0%';
+      alert('Progress reset successfully!');
+    }
+
+    // Show notification
+    function showNotification(title, body) {
+      if (Notification.permission === 'granted') {
+        new Notification(title, { body });
+      }
+    }
+
+    // Start reminder (every hour)
+    function startReminder() {
+      setInterval(() => {
+        if (goal > 0 && currentIntake < goal) {
+          showNotification('Drink Water Reminder', 'Time to drink some water!');
+        }
+      }, 3600000); // 1 hour in milliseconds
+    }
+  </script>
+</body>
+</html>
